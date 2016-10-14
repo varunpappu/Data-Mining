@@ -1,0 +1,467 @@
+/*-*-sql-*-*******************************************************************/
+
+/*****************************************************************************
+DEFINITION OF STORED FUNCTIONS
+A stored function stores data physically in the database as e.g. in a table
+******************************************************************************/
+
+create function datapoints()->Bag of Vector of Number v
+  /* Function to store data points to be clustered as bag of coordinate vectors  */
+  as stored;
+
+create function norm_datapoints() -> Bag of Vector of Number 
+   /* Function to store normalized data points */
+  as stored;
+
+create function clustered_points(Number cid) -> Bag of Vector of Number
+  /* Function to store clustering result as mapping between cluster identifier
+     cid and a bag of data points dp assigned to that cluster */
+  as stored;
+
+create function norm_clustered_points(Number cid) -> Bag of Vector of Number
+  /* Function to store clustering result (normalized data) */
+  as stored;
+
+/*****************************************************************************
+READING DATA
+******************************************************************************/
+
+/* Import data from the data file 'clusterdata1.nt' */
+set datapoints() = read_ntuples("data/clusterdata1.nt");
+
+count(datapoints());
+
+/* TODO: try clusterdata2.nt as well! */
+//Added by group1
+set datapoints() = read_ntuples("data/clusterdata2.nt");
+
+count(datapoints());
+
+
+/*****************************************************************************
+  PART 1
+  CLUSTERING WITH k-Means
+******************************************************************************/
+
+/*****************************************************************************
+DEFINITION OF USER SESSION PARAMETERS
+******************************************************************************/
+
+/* See the PCA-projected points to visually identify the clusters */
+scatter2((select pcascore(datapoints(),2)));
+
+/* TODO: Choose number of clusters (and number of initial centroids) for k-Means: */
+//Added by group 1
+// k is set as 4 as we see four different clusters by inspection
+
+set :k = 4;
+
+/*****************************************************************************
+CLUSTERING WITH k-Means (original data)
+******************************************************************************/
+
+/* Create the set of initial centroids by selecting :k random samples from datapoints() */
+set :vic = vectorof(sample(datapoints(), :k));
+
+/* See the sample generated */
+:vic;
+
+/* Save the sample to file vic.nt */
+save_centroids(:vic,'vic1.nt');
+
+/* load_centroids() can be used to read a vector of centroids from file */
+
+
+/* Run k-Means for given vector of initial centroids,
+   obtaining a vector of final centroids */
+set :vfc = kmeans_fc(:vic, #'datapoints');
+
+/* See the final centroids */
+:vfc;
+
+/* Distribute the datapoints among the clusters
+   corresponding to the final centroids */
+
+remove clustered_points(cid) = x from Vector of Number x, Number cid;
+
+set clustered_points(cid) = x
+   from Vector of Number x, Number cid
+  where cid = get_nearest_centroid_id(x, :vfc)
+    and x in datapoints();
+
+/* Draw scatter plot using data columns 0,1,2 as coordinates */
+disp_clustering3d((select cid, clustered_points(cid) from Number cid), {0,1,2});
+
+
+/* TODO: try other projections! */
+/*Added by Group1 for 2d
+
+/*Projection to 2D subspace
+scatter2((select clustered_points(cid) from Number cid));
+
+/*Projection of PCA component
+scatter2((select pcascore((select clustered_points(cid) from Number cid),2)));
+
+/* Compute Sum of Squared Error (SSE) for this clustering result */
+sse(select cid, clustered_points(cid) from Number cid);
+
+/*Cluster 1-> k =2,  SSE- 442
+/*Cluster 2 ->k=2, SSE- 439.9889
+/* Cluster 1->k =4 , SSE- 42.9055, 
+/* Cluster 2->k=4 , SSE - 161.243
+
+/*****************************************************************************
+CLUSTERING WITH k-Means (normalized data)
+******************************************************************************/
+
+/* Calculate parameters for minmax normalization, similarly to Assignment 1 */
+/*Get the smallest values
+set :min = aggv(datapoints(), #'minagg');
+
+/* Inspect minima of attribute values: */
+:min;
+
+/* Get the range of the value vector attributes of all training 
+   value vectors: */
+set :range = aggv(datapoints(), #'maxagg') - :min;
+
+/* Inspect the ranges of the attribute values: */
+:range;
+
+set norm_datapoints() = (x - :min) ./ substv(0,1,:range)
+  from Vector of Number x
+  where x in datapoints();
+
+/* Create the set of initial centroids by selecting :k random samples from normalized_datapoints() */
+set :norm_vic = vectorof(sample(norm_datapoints(), :k));
+
+/* See the sample generated */
+:norm_vic;
+
+/* Run k-Means on normalized data */
+set :norm_vfc = kmeans_fc(:norm_vic, #'norm_datapoints');
+
+:norm_vfc;
+  
+/* TODO: try other normalization methods! */
+
+1)/* Gaussian Normalisation procedure begins*/
+set :subtract = aggv(datapoints(), #'avg');
+
+:subtract;
+
+set :divide = aggv(datapoints(), #'stdev');
+
+:divide;
+
+select (x - :subtract) ./ substv(0,1,:divide)
+  from Vector of Number x 
+  where x in datapoints();
+  
+ /* Store all normalized training data in table datapoints */
+set norm_datapoints() = (x - :subtract) ./ substv(0,1,:divide)
+  from Vector of Number x
+  where x in datapoints();
+
+/* Create the set of initial centroids by selecting :k random samples from normalized_datapoints() */
+set :norm_vic = vectorof(sample(norm_datapoints(), :k));
+
+/* See the sample generated */
+:norm_vic;
+
+/* Run k-Means on normalized data */
+set :norm_vfc = kmeans_fc(:norm_vic, #'norm_datapoints');
+
+:norm_vfc;
+
+/* Gaussian Normalisation procedure ends*/
+
+2)/***Computing Normalization parameters*****/
+
+set :subtract = 0;
+
+:subtract;
+
+set :divide = aggv(datapoints(), #'maxnormagg');
+
+:divide;
+
+/* Store all normalized training data in table */
+ 
+set norm_datapoints() = (x - :subtract) ./ substv(0,1,:divide)
+  from Vector of Number x
+  where x in datapoints();
+ 
+/* Create the set of initial centroids by selecting :k random samples from normalized_datapoints() */
+set :norm_vic = vectorof(sample(norm_datapoints(), :k));
+
+/* See the sample generated */
+:norm_vic;
+
+/* Run k-Means on normalized data */
+set :norm_vfc = kmeans_fc(:norm_vic, #'norm_datapoints');
+
+:norm_vfc;
+
+/********* Max norm normalization ends *********/
+
+3)/*Standardization starts here */
+
+/* Mean for the datapoints
+set :mean = aggv(datapoints() ,#'sum') ./ aggv(datapoints() ,#'count');
+
+/*Inspect the mean of the attribute values */
+:mean;
+
+/*Standard deviation  
+/*select standard deviation of all training values
+set :standdev = aggv(datapoints(), #'stdev');
+
+/*Inspect the standar deviation of the attribute values */
+:standdev;
+
+set norm_datapoints() = (x - :mean) ./ :standdev
+	from Vector of Number x	
+	where x in datapoints();
+
+/* Create the set of initial centroids by selecting :k random samples from normalized_datapoints() */
+
+set :norm_vic = vectorof(sample(norm_datapoints(), :k));
+
+/* See the sample generated */
+:norm_vic;
+
+/* Run k-Means on normalized data */
+set :norm_vfc = kmeans_fc(:norm_vic, #'norm_datapoints');
+
+:norm_vfc;
+
+/* Standardization ends here */
+
+
+/* Distribute the normalized datapoints among the clusters
+   corresponding to the normalized final centroids */
+
+remove norm_clustered_points(cid) = x from Vector of Number x, Number cid;
+
+set norm_clustered_points(cid) = x
+   from Vector of Number x, Number cid
+  where cid = get_nearest_centroid_id(x, :norm_vfc)
+    and x in norm_datapoints();
+
+/* Restore the original scale (using normalization parameters) */
+
+remove clustered_points(cid) = x from Vector of Number x, Number cid;
+
+set clustered_points(cid) = (x .* :range) + :min 
+  from Number cid, Vector of Number x
+  where x in norm_clustered_points(cid);
+
+/* Draw scatter plot using data columns 0,1,2 as coordinates */
+disp_clustering3d((select cid, clustered_points(cid) from Number cid), {0,1,2});
+
+/* TODO: try other projections! */
+Added by group 1 for 2D
+
+//Projection to 2D subspace
+scatter2((select clustered_points(cid) from Number cid));
+
+//Projection of PCA component
+scatter2((select pcascore((select clustered_points(cid) from Number cid),2)));
+
+/* Compute Sum of Squared Error (SSE) for this clustering result */
+sse(select cid, clustered_points(cid) from Number cid);
+
+k = 4 -> SSE - 118.272
+k = 5 -> SSE - 182.031
+       
+
+/*****************************************************************************
+RUNNING k-Means MULTIPLE TIMES
+******************************************************************************/
+
+/* 
+   Utilizing a version of k-Means that using the cluster quality measure 
+   for a given k derives the optimal clustering by rerunning kmeans n times 
+   and returns as a final result the clustering that resulted in the 
+   minimal value for the cluster quality measure. 
+*/
+
+/* A function to store several (enumerated) sets of initial centroids */
+create function vics(Number vicsetid) -> Vector of Vector of Number as stored;
+
+/* Generate N = 10 random samples, each consisting of K = 2 initial 
+   centroids */
+
+for each Integer i where i in iota(1, 10)
+  set vics(i) = vectorof(sample(datapoints(), 2)); 
+
+/* TODO: try other K values! */
+
+for each Integer i where i in iota(1, 10)
+  set vics(i) = vectorof(sample(datapoints(), 3));
+for each Integer i where i in iota(1, 10)
+  set vics(i) = vectorof(sample(datapoints(), 4));
+for each Integer i where i in iota(1, 10)
+  set vics(i) = vectorof(sample(datapoints(), 5));   
+
+
+
+
+/* A function to store corresponding sets of final centroids */
+create function vfcs(Number vicsetid) -> Vector of Vector of Number as stored;
+
+/* Run k-Means for each set of initial centroids */
+set vfcs(i) = kmeans_fc(vics(i), #'datapoints')
+  from Integer i;
+
+/* Define SSE as a function of a vector of centroids, for the data stored in 
+   datapoints() */
+create function centroids_sse(Vector of Vector of Number centroids) -> Number
+  as sse(select get_nearest_centroid_id(x, centroids), x 
+           from Vector of Number x
+          where x in datapoints());
+
+/* See SSE for each result */
+
+select i, centroids_sse(vfcs(i)) from Integer i;
+
+/* Pick the best set of centroids */
+set :best_csetid = 7;
+
+/* Cluster the datapoints according to the best result */
+
+remove clustered_points(cid) = x from Vector of Number x, Number cid;
+
+set clustered_points(cid) = x
+   from Vector of Number x, Number cid
+  where cid = get_nearest_centroid_id(x, vfcs(:best_csetid))
+    and x in datapoints();
+
+/* Draw scatter plot using data columns 0,1,2 as coordinates */
+disp_clustering3d((select cid, clustered_points(cid) from Number cid), {0,1,2});
+
+/* TODO: try other projections! */
+//Added by group 2
+
+//Projection to 2D subspace
+scatter2((select clustered_points(cid) from Number cid));
+
+//Projection of PCA component
+scatter2((select pcascore((select clustered_points(cid) from Number cid),2)));
+
+
+
+
+/*****************************************************************************
+  PART 2
+  CLUSTERING WITH DBSCAN
+******************************************************************************/
+
+/* Function to store directly desnity reachable (DDR) relationship on 
+   datapoints (type D) */
+create function ddrtab(Vector of Number corepoint) 
+                     -> Bag of Vector of Number
+  as stored;
+
+/* Neighborhood radius */				
+set :eps = 0.3;
+
+/* Minimum of points in neighborhood, defining cluster density */
+set :minpts = 5;
+
+/* Empty and then populate the DDR table */
+remove ddrtab(p) = q from Vector of Number p, Vector of Number q;
+
+set ddrtab(p) = neighbors
+  from Vector of Number p, Bag of Vector of Number neighbors
+  where p in datapoints()
+  and neighbors = neighbors(p, datapoints(), :eps)
+  and count(neighbors) >= :minpts; 
+/* only the core points are stored as arguments */
+
+/* Function to store core points (subset to datapoints()) (type A) */
+create function corepoints() -> Bag of Vector of Number;
+
+set corepoints() = (select distinct p
+                      from Vector of Number p, Vector of Number q
+                     where q in ddrtab(p));
+
+/* Get the number of core points found  */
+count(corepoints());
+
+/* Plot the core pointes with black color, all other points - with yellow color */
+disp_subset3d(datapoints(), corepoints(), {0,1,2});
+
+/* Run DBSCAN algotithm, providing DDR table and and the core points */
+
+remove clustered_points(cid) = x from Vector of Number x, Number cid;
+
+dbscan(corepoints(), #'ddrtab', #'clustered_points');
+
+/* Get the number of clusters discovered */
+count(select distinct cid 
+      from Number cid, Vector of Number x 
+      where x in clustered_points(cid));
+
+/* Draw scatter plot using data columns 0,1,2 as coordinates */
+disp_clustering3d((select cid, clustered_points(cid) 
+                   from Number cid), {0,1,2});
+
+/* TODO: try other projections! */
+//Added by group 2
+
+//Projection to 2D subspace
+scatter2((select clustered_points(cid) from Number cid));
+
+//Projection of PCA component
+scatter2((select pcascore((select clustered_points(cid) from Number cid),2)));
+
+/* Compute Sum of Squared Error (SSE) for this clustering result */
+sse(select cid, clustered_points(cid) from Number cid);
+
+
+/*****************************************************************************
+VISUALLY SELECTING minpts AND eps 
+******************************************************************************/
+
+/* Define a function to select k-th smallest number from a bag 
+  (you need to define a function for each k value you check!) */
+     
+  
+  
+  
+
+  create function fifth_smallest(Bag of Number b)->Number
+/* Returns the 5th smallest element in the bag of numbers b */
+  as kth_smallest(b,5);
+	
+	  
+disp_sorted_numbers(select d from Vector of Number p, Number d
+                     where (p, d) in 
+                           groupby((select x, euclid(x, y) 
+                                    from Vector of Number x, 
+                                         Vector of Number y 
+                                    where x in datapoints() 
+                                      and y in datapoints()
+                                      and x != y ), #'fifth_smallest'));
+ 
+
+
+
+/*****************************************************************************
+F. COMPARING THE ALGORITHMS
+*****************************************************************************/
+
+/* Which algorithm you have found most suitable for clustering of each dataset?
+   Which parameters (including initial centroids) did you use? 
+
+	For clusterdata1 we found k means suitable because of less outliers present in the data and also the 
+	size of the clusters were of the same density and same size.  And clusterdata2 works well with DBSCAN because
+	it is resistant to noise and can handle clusters of different shapes and size.
+	
+	For DBSCAN we used centroid as 5 and minpts as .3 and for k means we chose the value of k as 4 and 5 for clusterdata1
+	and clusterdata2 respectively.
+	
+  Explain your decisions.
+*/
